@@ -1,36 +1,34 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
-import { Helmet } from 'react-helmet-async';
-import {
-  ChatBubbleLeftIcon,
-  PhotoIcon,
-  UserCircleIcon,
-  InformationCircleIcon,
-  Bars3Icon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline';
+import axios from 'axios';
+import { FiSend, FiMenu, FiBell, FiUser } from 'react-icons/fi';
 
-// Types
+const API_KEY = "AIzaSyDSrtttEykprVBleLk9iWXMZZeJCt3bBRk";
+const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${API_KEY}`;
+
 interface Message {
   content: string;
-  isBot: boolean;
-  timestamp: Date;
-  imageUrl?: string;
+  isUser: boolean;
+  image?: string;
 }
 
-interface MenuItem {
-  label: string;
-  icon: any;
-  action: () => void;
+interface NotificationBadge {
+  count: number;
 }
+
+const NotificationBadge = ({ count }: NotificationBadge) => (
+  <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+    {count}
+  </div>
+);
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(3);
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -41,114 +39,45 @@ export default function Home() {
     scrollToBottom();
   }, [messages]);
 
-  const API_KEY = "AIzaSyDSrtttEykprVBleLk9iWXMZZeJCt3bBRk";
-  const API_URL = `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${API_KEY}`;
-
-  const generateImage = async (query: string) => {
-    try {
-      const response = await axios.get(`https://image.pollinations.ai/prompt/${encodeURIComponent(query)}`, {
-        responseType: 'arraybuffer'
-      });
-      const base64 = Buffer.from(response.data, 'binary').toString('base64');
-      return `data:image/jpeg;base64,${base64}`;
-    } catch (error) {
-      console.error('Error generating image:', error);
-      return null;
-    }
+  const handleNotificationClick = () => {
+    toast('You have new messages!', {
+      icon: '🔔',
+      duration: 3000,
+    });
+    setNotificationCount(0);
   };
-
-  const menuItems: MenuItem[] = [
-    {
-      label: 'Chat',
-      icon: ChatBubbleLeftIcon,
-      action: () => {
-        toast.success('Switched to Chat mode');
-        setIsMenuOpen(false);
-      }
-    },
-    {
-      label: 'Image Generation',
-      icon: PhotoIcon,
-      action: () => {
-        setInput('/poli ');
-        toast('Type your image prompt after "/poli"', {
-          icon: '🎨',
-          duration: 3000
-        });
-        setIsMenuOpen(false);
-      }
-    },
-    {
-      label: 'Profile',
-      icon: UserCircleIcon,
-      action: () => {
-        toast('Profile feature coming soon!', {
-          icon: '👤'
-        });
-        setIsMenuOpen(false);
-      }
-    },
-    {
-      label: 'About',
-      icon: InformationCircleIcon,
-      action: () => {
-        toast('Created by Metoushela Walker', {
-          icon: 'ℹ️'
-        });
-        setIsMenuOpen(false);
-      }
-    }
-  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
 
-    const userMessage: Message = {
-      content: input,
-      isBot: false,
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
+    const userMessage = input;
     setInput('');
+    setMessages(prev => [...prev, { content: userMessage, isUser: true }]);
+
     setIsLoading(true);
 
     try {
-      // Check if it's a poli command
-      if (input.toLowerCase().startsWith('/poli')) {
-        const imagePrompt = input.slice(6); // Remove "/poli " from the input
-        toast.loading('Generating image...', { id: 'imageGen' });
-        const imageUrl = await generateImage(imagePrompt);
+      if (userMessage.startsWith('/poli')) {
+        const query = encodeURIComponent(userMessage.slice(6));
+        const imageUrl = `https://image.pollinations.ai/prompt/${query}`;
         
-        if (imageUrl) {
-          const botResponse: Message = {
-            content: "Here's your generated image using Poli:",
-            isBot: true,
-            timestamp: new Date(),
-            imageUrl: imageUrl
-          };
-          setMessages(prev => [...prev, botResponse]);
-          toast.success('Image generated successfully!', { id: 'imageGen' });
-        }
+        setMessages(prev => [...prev, {
+          content: 'Generated image:',
+          isUser: false,
+          image: imageUrl
+        }]);
+        
+        toast.success('Image generated successfully!');
       } else {
-        toast.loading('Thinking...', { id: 'thinking' });
-        // Text response from Gemini API
         const response = await axios.post(API_URL, {
-          contents: [{ parts: [{ text: input }] }]
+          contents: [{ parts: [{ text: userMessage }] }]
         });
-        
-        const botResponse: Message = {
-          content: response.data.candidates[0].content.parts[0].text,
-          isBot: true,
-          timestamp: new Date(),
-        };
-        
-        setMessages(prev => [...prev, botResponse]);
-        toast.success('Response received!', { id: 'thinking' });
+
+        const botResponse = response.data.candidates[0].content.parts[0].text;
+        setMessages(prev => [...prev, { content: botResponse, isUser: false }]);
       }
     } catch (error) {
-      console.error('Error:', error);
       toast.error('Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
@@ -157,102 +86,95 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white">
-      <Helmet>
-        <title>Metoushela AI - Intelligent ChatBot</title>
-        <meta name="description" content="AI ChatBot by Metoushela Walker" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta charSet="utf-8" />
-      </Helmet>
-
-      <Toaster 
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: '#333',
-            color: '#fff',
-          },
-          success: {
-            iconTheme: {
-              primary: '#4ade80',
-              secondary: '#fff',
-            },
-          },
-        }}
-      />
-
+      <Toaster position="top-right" />
+      
       {/* Header */}
-      <header className="border-b border-gray-700 bg-gray-900/50 backdrop-blur-sm fixed top-0 w-full z-50">
+      <header className="fixed top-0 w-full bg-gray-900/90 backdrop-blur-sm z-50 border-b border-gray-800">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="flex items-center space-x-2"
-            >
-              <div className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 text-transparent bg-clip-text">
+          <div className="flex justify-between items-center">
+            {/* Logo Section */}
+            <div className="flex items-center gap-3">
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center"
+              >
+                <span className="text-xl">🤖</span>
+              </motion.div>
+              <motion.h1 
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent"
+              >
                 Metoushela AI
-              </div>
-            </motion.div>
+              </motion.h1>
+            </div>
 
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="md:hidden p-2 hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              {isMenuOpen ? (
-                <XMarkIcon className="w-6 h-6" />
-              ) : (
-                <Bars3Icon className="w-6 h-6" />
-              )}
-            </button>
-
-            {/* Desktop Menu */}
-            <nav className="hidden md:flex space-x-6">
-              {menuItems.map((item, index) => (
-                <button
-                  key={index}
-                  onClick={item.action}
-                  className="flex items-center space-x-2 hover:text-blue-400 transition-colors"
-                >
-                  <item.icon className="w-5 h-5" />
-                  <span>{item.label}</span>
-                </button>
-              ))}
+            {/* Navigation for Desktop */}
+            <nav className="hidden md:flex items-center gap-8">
+              <a href="#" className="hover:text-blue-400 transition-colors">Home</a>
+              <a href="#" className="hover:text-blue-400 transition-colors">About</a>
+              <a href="#" className="hover:text-blue-400 transition-colors">Chat</a>
+              <a href="#" className="hover:text-blue-400 transition-colors">Contact</a>
             </nav>
+
+            {/* Right Section */}
+            <div className="flex items-center gap-4">
+              {/* Notification Bell */}
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                className="relative"
+                onClick={handleNotificationClick}
+              >
+                <FiBell className="w-6 h-6 text-gray-400 hover:text-white transition-colors" />
+                {notificationCount > 0 && <NotificationBadge count={notificationCount} />}
+              </motion.button>
+
+              {/* User Profile */}
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <FiUser className="w-6 h-6 text-gray-400 hover:text-white transition-colors" />
+              </motion.button>
+
+              {/* Mobile Menu Button */}
+              <motion.button 
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="md:hidden"
+              >
+                <FiMenu className="w-6 h-6" />
+              </motion.button>
+            </div>
           </div>
         </div>
-
-        {/* Mobile Menu */}
-        <AnimatePresence>
-          {isMenuOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="md:hidden border-t border-gray-700"
-            >
-              <div className="px-4 py-2 space-y-2">
-                {menuItems.map((item, index) => (
-                  <button
-                    key={index}
-                    onClick={item.action}
-                    className="w-full flex items-center space-x-2 p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                  >
-                    <item.icon className="w-5 h-5" />
-                    <span>{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </header>
 
+      {/* Mobile Menu */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            initial={{ opacity: 0, x: '100%' }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: '100%' }}
+            className="fixed top-16 right-0 w-64 bg-gray-800 p-4 z-40 rounded-l-lg shadow-xl"
+          >
+            <nav className="flex flex-col gap-4">
+              <a href="#" className="hover:text-blue-400 transition-colors">Home</a>
+              <a href="#" className="hover:text-blue-400 transition-colors">About</a>
+              <a href="#" className="hover:text-blue-400 transition-colors">Chat</a>
+              <a href="#" className="hover:text-blue-400 transition-colors">Contact</a>
+            </nav>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Main Chat Container */}
-      <main className="container mx-auto px-4 pt-24 pb-24">
-        <div className="max-w-4xl mx-auto bg-gray-800/50 rounded-lg shadow-xl backdrop-blur-sm border border-gray-700 min-h-[600px] flex flex-col">
-          {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <main className="container mx-auto px-4 pt-24 pb-32">
+        <div className="max-w-3xl mx-auto bg-gray-800/50 rounded-lg backdrop-blur-sm shadow-xl p-4 min-h-[calc(100vh-16rem)]">
+          <div className="space-y-4 mb-4">
             <AnimatePresence>
               {messages.map((message, index) => (
                 <motion.div
@@ -260,61 +182,83 @@ export default function Home() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className={`flex ${message.isBot ? 'justify-start' : 'justify-end'}`}
+                  className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
                 >
-                  <div className={`max-w-[80%] ${message.isBot ? 'bg-gray-700' : 'bg-blue-600'} rounded-lg p-4`}>
-                    <p className="text-sm">{message.content}</p>
-                    {message.imageUrl && (
-                      <motion.img 
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        src={message.imageUrl} 
-                        alt="Generated Image" 
+                  <div className={`max-w-[80%] rounded-lg p-4 ${
+                    message.isUser 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-gray-700 text-gray-100'
+                  }`}>
+                    <p>{message.content}</p>
+                    {message.image && (
+                      <img 
+                        src={message.image} 
+                        alt="Generated" 
                         className="mt-2 rounded-lg max-w-full h-auto"
                       />
                     )}
-                    <p className="text-xs text-gray-400 mt-1">
-                      {new Date(message.timestamp).toLocaleTimeString()}
-                    </p>
                   </div>
                 </motion.div>
               ))}
             </AnimatePresence>
+            {isLoading && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex justify-start"
+              >
+                <div className="bg-gray-700 rounded-lg p-4">
+                  <div className="flex space-x-2">
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce delay-100" />
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce delay-200" />
+                  </div>
+                </div>
+              </motion.div>
+            )}
             <div ref={messagesEndRef} />
           </div>
-
-          {/* Input Area */}
-          <form onSubmit={handleSubmit} className="p-4 border-t border-gray-700">
-            <div className="flex space-x-2">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Chat normally or use /poli for image generation..."
-                className="flex-1 bg-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={isLoading}
-              />
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="bg-blue-600 hover:bg-blue-700 rounded-lg px-6 py-2 font-medium transition-colors disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  'Send'
-                )}
-              </button>
-            </div>
-          </form>
         </div>
       </main>
 
+      {/* Input Form */}
+      <form 
+        onSubmit={handleSubmit}
+        className="fixed bottom-0 w-full bg-gray-900/90 backdrop-blur-sm py-4"
+      >
+        <div className="container mx-auto px-4">
+          <div className="max-w-3xl mx-auto flex gap-2">
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Type your message... (use /poli for image generation)"
+              className="flex-1 bg-gray-800 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoading}
+            />
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              type="submit"
+              disabled={isLoading}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-6 py-2 flex items-center gap-2 transition-colors"
+            >
+              <FiSend className="w-5 h-5" />
+              Send
+            </motion.button>
+          </div>
+        </div>
+      </form>
+
       {/* Footer */}
-      <footer className="fixed bottom-0 w-full bg-gray-900/50 backdrop-blur-sm border-t border-gray-700">
-        <div className="container mx-auto px-4 py-4">
-          <div className="text-center text-sm text-gray-400">
-            Created by Metoushela Walker | Fullstack Developer & Graphic Designer
+      <footer className="fixed bottom-0 w-full bg-gray-900 text-gray-400 text-sm py-2 border-t border-gray-800">
+        <div className="container mx-auto px-4">
+          <div className="flex justify-between items-center">
+            <p>Created by Metoushela Walker</p>
+            <div className="flex gap-4">
+              <a href="#" className="hover:text-white transition-colors">Terms</a>
+              <a href="#" className="hover:text-white transition-colors">Privacy</a>
+            </div>
           </div>
         </div>
       </footer>
